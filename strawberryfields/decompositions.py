@@ -1176,7 +1176,7 @@ def _sun_parameters(U, rtol=1e-12, atol=1e-12):
     transformation.
     """
     if U.shape == (3, 3):
-        return _su3_parameters(U)
+        return _su3_parameters(U, rtol, atol)
 
     staircase_transformation, new_U = _build_staircase(U, rtol, atol)
     Unm1 = new_U[1:, 1:]
@@ -1218,7 +1218,9 @@ def _build_staircase(U, rtol=1e-12, atol=1e-12):
             # "Phase shift" by applying an SU(2) transformation to cancel out the
             # top-most phase. Do nothing to everything else.
             phase_su2 = np.array([[running_prod[0, 0].conjugate(), 0], [0, running_prod[0, 0]]])
-            transformations = [[0.0, 0.0, 0.0]] * (n - 2) + [_su2_parameters(phase_su2.conj().T)]
+            transformations = [[0.0, 0.0, 0.0]] * (n - 2) + [
+                _su2_parameters(phase_su2.conj().T, rtol, atol)
+            ]
 
             full_phase_su2 = np.identity(n, dtype=complex)
             full_phase_su2[0:2, 0:2] = phase_su2
@@ -1240,7 +1242,7 @@ def _build_staircase(U, rtol=1e-12, atol=1e-12):
                         )
                         permmat = phase_su2 @ permmat
 
-                    transformations.append(_su2_parameters(permmat.conj().T))
+                    transformations.append(_su2_parameters(permmat.conj().T, rtol, atol))
 
                     full_trans = np.identity(n, dtype=complex)
                     full_trans[rot_idx - 1 : rot_idx + 1, rot_idx - 1 : rot_idx + 1] = permmat
@@ -1281,7 +1283,7 @@ def _build_staircase(U, rtol=1e-12, atol=1e-12):
 
             # Add the transformation to the sequence and update the product
             Rij = Rij_inv.conj().T
-            transformations.append(_su2_parameters(Rij))
+            transformations.append(_su2_parameters(Rij, rtol, atol))
 
             # Embed into larger space
             full_Rij_inv[i : j + 1, i : j + 1] = Rij_inv
@@ -1290,7 +1292,7 @@ def _build_staircase(U, rtol=1e-12, atol=1e-12):
     return transformations, running_prod
 
 
-def _su2_parameters(U, tol=1e-10):
+def _su2_parameters(U, rtol=1e-12, atol=1e-12):
     r"""Compute and return the parameters ``[a, b, g]`` of an :math:`\mathrm{SU}(2)` matrix.
 
     Args:
@@ -1315,7 +1317,7 @@ def _su2_parameters(U, tol=1e-10):
     """
     if U.shape != (2, 2):
         raise ValueError("Input matrix dimensions of _su2_parameters must be 2x2.")
-    if not np.isclose(np.linalg.det(U), 1, atol=tol, rtol=0):
+    if not np.isclose(np.linalg.det(U), 1, atol=atol, rtol=rtol):
         raise ValueError(
             "Input matrix must have determinant 1 to be decomposed into SU(2) parameters."
         )
@@ -1324,7 +1326,7 @@ def _su2_parameters(U, tol=1e-10):
     # 1 and slightly above, when it should be 1 exactly. Isolate these cases
     # to prevent us from getting NaN.
     b = None
-    if np.isclose(np.absolute(U[0, 1]), 1, atol=tol, rtol=0):
+    if np.isclose(np.absolute(U[0, 1]), 1, atol=atol, rtol=rtol):
         b = 2 * np.arcsin(1)
     else:
         b = 2 * np.arcsin(np.absolute(U[0, 1]))
@@ -1335,7 +1337,7 @@ def _su2_parameters(U, tol=1e-10):
     return [a, b, g]
 
 
-def _su3_parameters(U):
+def _su3_parameters(U, rtol=1e-12, atol=1e-12):
     r"""Factorizes an :math:`\mathrm{SU}(3)` transformation into 3 :math:`\mathrm{SU}(2)`
     transformations.
 
@@ -1376,7 +1378,7 @@ def _su3_parameters(U):
     """
     if U.shape != (3, 3):
         raise ValueError("Input matrix dimensions of _su3_parameters must be 3x3.")
-    if not np.isclose(np.linalg.det(U), 1):
+    if not np.isclose(np.linalg.det(U), 1, atol=atol, rtol=rtol):
         raise ValueError(
             "Input matrix must have determinant 1 to be decomposed into SU(2) parameters."
         )
@@ -1388,7 +1390,7 @@ def _su3_parameters(U):
     # already have an SU(2) transformation embedded in an SU(3) transform,
     # so all we need to do is get the parameters of that SU(2) transform.
     if np.isclose(x, 1):
-        params = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], _su2_parameters(U[1:, 1:])]
+        params = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], _su2_parameters(U[1:, 1:], rtol, atol)]
     # Another special case: the modulus of the top left element is 1.
     # Then we need to do a transformation on modes 1 and 2 to make the top
     # entry 1, then an SU(2) transformation on modes 2 and 3 with what's left.
@@ -1405,8 +1407,8 @@ def _su3_parameters(U):
 
         params = [
             [0.0, 0.0, 0.0],
-            _su2_parameters(phase_su2.conj().T),
-            _su2_parameters(remainder_su2),
+            _su2_parameters(phase_su2.conj().T, rtol, atol),
+            _su2_parameters(remainder_su2, rtol, atol),
         ]
 
     else:
@@ -1417,15 +1419,15 @@ def _su3_parameters(U):
         # Build the SU(2) transformation matrices
         # SU_23(3) - three parameters
         left = np.array([[1, 0, 0], [0, capY, -np.conj(capZ)], [0, capZ, np.conj(capY)]])
-        left_params = _su2_parameters(left[1:, 1:])
+        left_params = _su2_parameters(left[1:, 1:], rtol, atol)
 
         # SU_12(2) - only two parameters
         middle = np.array([[x, -cf, 0], [cf, np.conj(x), 0], [0, 0, 1]])
-        middle_params = _su2_parameters(middle[0:2, 0:2])
+        middle_params = _su2_parameters(middle[0:2, 0:2], rtol, atol)
 
         # SU_23(3) - again three parameters
         right = middle.conj().T @ left.conj().T @ U
-        right_params = _su2_parameters(right[1:, 1:])
+        right_params = _su2_parameters(right[1:, 1:], rtol, atol)
 
         params = [left_params, middle_params, right_params]
 
